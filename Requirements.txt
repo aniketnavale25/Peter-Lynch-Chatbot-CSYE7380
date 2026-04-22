@@ -1,0 +1,33 @@
+# ── Core RAG stack ────────────────────────────────────
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-huggingface>=0.0.3
+langchain-text-splitters>=0.2.0
+
+# ── Vector DB ─────────────────────────────────────────
+chromadb>=0.5.0
+langchain-chroma>=0.1.0
+
+# ── Embedding + reranking models ──────────────────────
+sentence-transformers>=3.0.0
+torch>=2.2.0
+
+# ── LLM inference (xAI Grok) ──────────────────────────
+openai>=1.30.0
+
+# ── Document loaders ──────────────────────────────────
+pypdf>=4.0.0
+pandas>=2.0.0
+openpyxl>=3.1.0        # required for pandas to read .xlsx files
+
+# ── Frontend ──────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Stock data & charts ───────────────────────────────
+yfinance>=0.2.40
+plotly>=5.20.0
+numpy>=1.26.0
+
+# ── Env management ────────────────────────────────────
+python-dotenv>=1.0.0

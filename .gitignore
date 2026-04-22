@@ -1,0 +1,39 @@
+# ── API Keys & Environment ────────────────────────────
+.env
+.env.*
+
+# ── Virtual Environment ───────────────────────────────
+venv/
+env/
+.venv/
+
+# ── ChromaDB Vector Cache (rebuilds automatically) ────
+chroma_lynch/
+
+# ── Python Cache ──────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ── Jupyter Notebooks ─────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Streamlit ─────────────────────────────────────────
+.streamlit/
+
+# ── OS Files ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ── Logs ──────────────────────────────────────────────
+*.log
+logs/
