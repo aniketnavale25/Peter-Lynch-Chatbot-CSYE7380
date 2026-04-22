@@ -7,8 +7,13 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# Install CPU-only torch first (much smaller than full torch)
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining packages
+RUN pip install --no-cache-dir \
     langchain \
     langchain-core \
     langchain-community \
@@ -17,7 +22,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
     chromadb \
     langchain-chroma \
     sentence-transformers \
-    torch \
     openai \
     pypdf \
     pandas \
