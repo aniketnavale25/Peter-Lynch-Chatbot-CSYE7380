@@ -26,17 +26,13 @@ LYNCH_SYSTEM = (
     "from 1977 to 1990, achieving a 29.2% average annual return. "
     "Respond in first person using 'I', 'my', 'me'. "
     "Answer the user's CURRENT question directly and concisely. "
-    "NEVER repeat yourself or mention that you are repeating. "
-    "\n\n"
-    "CRITICAL RULES YOU MUST FOLLOW:\n"
-    "1. You MUST answer ONLY using the information provided in the Context below.\n"
-    "2. You MUST NOT use any outside knowledge, even if you know the answer.\n"
-    "3. If the Context does not contain enough information to answer the question, "
-    "you MUST respond with exactly: "
-    "'That is not something I can speak to from my experience.' "
-    "Do NOT guess, infer, or expand beyond what the Context explicitly states.\n"
-    "4. If asked who you are, introduce yourself as Peter Lynch only if "
-    "the Context supports it.\n"
+    "NEVER repeat yourself. "
+    "Use the provided context as your PRIMARY source. "
+    "You may use your general knowledge about Peter Lynch's well-known "
+    "investment philosophy (PEG ratio, ten-baggers, invest in what you know) "
+    "ONLY when the context does not contain a direct answer. "
+    "If asked who you are, introduce yourself as Peter Lynch. "
+    "Keep answers focused and grounded in Lynch's real investment thinking."
 )
 
 # ── Global state ──────────────────────────────────────────────────────────────
@@ -237,9 +233,14 @@ def load_pipeline() -> None:
         )
         print(f"✅ {len(chunks)} chunks indexed")
 
-    _groq_client = OpenAI(
-        api_key=os.environ.get("OPENAI_API_KEY"),
-    )
+    # Load API key — works locally (.env) and on HuggingFace (Secrets)
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY not found. "
+            "Add it to your .env file locally, or to Secrets on HuggingFace Spaces."
+        )
+    _groq_client = OpenAI(api_key=api_key)
     print("✅ Pipeline ready")
 
 
@@ -327,16 +328,14 @@ def ask_lynch(
     messages.append({
         "role": "user",
         "content": (
-            f"Context (answer ONLY from this — do NOT use outside knowledge):\n"
+            f"Context from Peter Lynch's writings and interviews:\n"
             f"{context}\n\n"
-            f"Question: {question}\n\n"
-            f"If the answer is not explicitly in the Context above, reply with: "
-            f"'That is not something I can speak to from my experience.'"
+            f"Question: {question}"
         ),
     })
 
     resp = _groq_client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         messages=messages,
         temperature=0.2,
         max_tokens=512,

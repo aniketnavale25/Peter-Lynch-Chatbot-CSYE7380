@@ -211,7 +211,7 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 # Main content  ── two tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab_chat, tab_stocks = st.tabs(["💬  Chat with Peter Lynch", "📊  Lynch Stock Analyzer"])
+tab_chat, tab_stocks = st.tabs(["Chat with Peter Lynch", "Lynch Stock Analyzer"])
 
 
 # ═════════════════════════════════════════════════════════════════════════════
