@@ -1,31 +1,34 @@
 """
 app.py  --  Peter Lynch ChatBot  --  Streamlit UI
 ===================================================
-Part I  : Chat with Peter Lynch (RAG-powered)
-Part II : Financial Ratios Dashboard (fin_data_df)
-Part III: K-Means Stock Screener (professor's exact algorithm)
+Tab 1: Chat with Peter Lynch      (RAG-powered)
+Tab 2: Lynch Stock Analyzer       (single stock deep-dive + backtest)
+Tab 3: Financial Ratios Dashboard (fin_data_df, Dow Jones 30)
+Tab 4: K-Means Stock Screener     (professor's exact algorithm)
 """
 
 import warnings
 warnings.filterwarnings("ignore")
 
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import MinMaxScaler
+from datetime import datetime
 
 from lynch_rag import ask_lynch, load_pipeline
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Northeastern University brand colors
-#   Primary red:  #C8102E
-#   Black:        #000000
-#   Dark bg:      #1A1A1A
-#   Card bg:      #2A2A2A
-#   Border:       #3D3D3D
-#   Muted text:   #A0A0A0
+#   Primary red : #C8102E
+#   Black       : #000000
+#   Dark bg     : #1A1A1A
+#   Card bg     : #2A2A2A
+#   Border      : #3D3D3D
+#   Muted text  : #A0A0A0
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(
@@ -78,6 +81,29 @@ h1, h2, h3, h4 {
 }
 .user-label  { color: #C8102E; }
 .lynch-label { color: #FFFFFF; }
+.metric-card {
+    background: #2A2A2A;
+    border: 1px solid #3D3D3D;
+    border-top: 3px solid #C8102E;
+    border-radius: 6px;
+    padding: 16px 18px;
+    text-align: center;
+}
+.metric-card .value {
+    font-size: 1.85rem;
+    font-weight: 900;
+    color: #C8102E;
+}
+.metric-card .label {
+    font-size: 0.72rem;
+    color: #A0A0A0;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+.verdict-undervalued { color: #4CAF50; font-weight: 700; font-size:1.05rem; }
+.verdict-fair        { color: #FFC107; font-weight: 700; font-size:1.05rem; }
+.verdict-overvalued  { color: #C8102E; font-weight: 700; font-size:1.05rem; }
 .stButton > button {
     background: #C8102E !important;
     color: #FFFFFF !important;
@@ -106,6 +132,15 @@ h1, h2, h3, h4 {
     background: transparent !important;
 }
 hr { border-color: #3D3D3D; }
+.scorecard-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 10px;
+    margin: 3px 0;
+    background: #2A2A2A;
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
 .long-card {
     background: #1A2A1A; border: 1px solid #4CAF50;
     border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;
@@ -160,23 +195,19 @@ FIN_DATA_STATIC = {
     "VZ":   {"currentPrice":40.5,"returnOnEquity":0.185,"returnOnAssets":0.050,"debtToEquity":170.7,"currentRatio":0.63,"profitMargins":0.130,"earningsGrowth":0.0,"revenueGrowth":0.016,"grossMargins":0.600,"ebitdaMargins":0.362,"operatingMargins":0.212,"totalCash":4.19e9,"totalDebt":1.72e11,"totalRevenue":1.35e11,"grossProfits":8.09e10,"freeCashflow":1.60e10,"operatingCashflow":3.69e10,"revenuePerShare":31.96,"quickRatio":0.47},
     "WMT":  {"currentPrice":85.8,"returnOnEquity":0.214,"returnOnAssets":0.071,"debtToEquity":63.6,"currentRatio":0.82,"profitMargins":0.029,"earningsGrowth":-0.023,"revenueGrowth":0.041,"grossMargins":0.249,"ebitdaMargins":0.062,"operatingMargins":0.042,"totalCash":9.04e9,"totalDebt":6.21e10,"totalRevenue":6.81e11,"grossProfits":1.69e11,"freeCashflow":7.93e9,"operatingCashflow":3.64e10,"revenuePerShare":84.69,"quickRatio":0.20},
 }
-
 DOW30 = list(FIN_DATA_STATIC.keys())
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(
-        "<h1 style='font-size:1.5rem; margin-bottom:0; color:#FFFFFF;'>Peter Lynch</h1>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<p style='color:#A0A0A0; font-size:0.8rem; margin-top:4px;'>"
-        "Fidelity Magellan Fund · 1977-1990<br>29.2% avg. annual return</p>",
-        unsafe_allow_html=True,
-    )
-    st.markdown("<div style='height:2px;background:#C8102E;margin:10px 0;'></div>", unsafe_allow_html=True)
+    st.markdown("<h1 style='font-size:1.5rem;margin-bottom:0;color:#FFFFFF;'>Peter Lynch</h1>",
+                unsafe_allow_html=True)
+    st.markdown("<p style='color:#A0A0A0;font-size:0.8rem;margin-top:4px;'>"
+                "Fidelity Magellan Fund · 1977-1990<br>29.2% avg. annual return</p>",
+                unsafe_allow_html=True)
+    st.markdown("<div style='height:2px;background:#C8102E;margin:10px 0;'></div>",
+                unsafe_allow_html=True)
 
     st.markdown("<p style='color:#FFFFFF;font-weight:700;margin-bottom:6px;'>Core Principles</p>",
                 unsafe_allow_html=True)
@@ -186,10 +217,10 @@ with st.sidebar:
         st.markdown(
             f"<div style='font-size:0.78rem;padding:3px 0 3px 8px;"
             f"border-left:2px solid #C8102E;color:#A0A0A0;margin:2px 0;'>{p}</div>",
-            unsafe_allow_html=True,
-        )
+            unsafe_allow_html=True)
 
-    st.markdown("<div style='height:2px;background:#3D3D3D;margin:10px 0;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:2px;background:#3D3D3D;margin:10px 0;'></div>",
+                unsafe_allow_html=True)
 
     if not st.session_state.pipeline_ready:
         if st.button("Load Lynch Knowledge Base"):
@@ -206,19 +237,19 @@ with st.sidebar:
             st.session_state.chat_history = []
             st.rerun()
 
-    st.markdown("<div style='height:2px;background:#3D3D3D;margin:10px 0;'></div>", unsafe_allow_html=True)
-    st.markdown(
-        "<p style='font-size:0.7rem;color:#555555;'>"
-        "Powered by LangChain · ChromaDB · Groq<br>"
-        "Northeastern University · CSYE 7380</p>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div style='height:2px;background:#3D3D3D;margin:10px 0;'></div>",
+                unsafe_allow_html=True)
+    st.markdown("<p style='font-size:0.7rem;color:#555555;'>"
+                "Powered by LangChain · ChromaDB · Groq<br>"
+                "Northeastern University · CSYE 7380</p>",
+                unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab_chat, tab_stocks, tab_kmeans = st.tabs([
+tab_chat, tab_analyzer, tab_dashboard, tab_kmeans = st.tabs([
     "Chat with Peter Lynch",
+    "Lynch Stock Analyzer",
     "Financial Dashboard",
     "K-Means Stock Screener",
 ])
@@ -232,8 +263,7 @@ with tab_chat:
         "<h2 style='margin-bottom:0.2rem;'>Ask Peter Lynch</h2>"
         "<p style='color:#A0A0A0;font-size:0.9rem;'>"
         "Ask about investment strategy, stock selection, portfolio management, or his career.</p>",
-        unsafe_allow_html=True,
-    )
+        unsafe_allow_html=True)
     st.divider()
 
     with st.container():
@@ -241,42 +271,34 @@ with tab_chat:
             st.markdown(
                 "<div style='color:#555555;font-style:italic;text-align:center;"
                 "padding:3rem 0;'>Start the conversation below</div>",
-                unsafe_allow_html=True,
-            )
+                unsafe_allow_html=True)
         else:
             for turn in st.session_state.chat_history:
                 st.markdown(
                     f"<div class='speaker-label user-label'>You</div>"
                     f"<div class='chat-user'>{turn['user']}</div>",
-                    unsafe_allow_html=True,
-                )
+                    unsafe_allow_html=True)
                 st.markdown(
                     f"<div class='speaker-label lynch-label'>Peter Lynch</div>"
                     f"<div class='chat-lynch'>{turn['assistant']}</div>",
-                    unsafe_allow_html=True,
-                )
+                    unsafe_allow_html=True)
 
     st.divider()
     col_input, col_btn = st.columns([5, 1])
     with col_input:
         user_question = st.text_input(
             label="question", placeholder="e.g. How do you use the PEG ratio?",
-            label_visibility="collapsed", key="chat_input",
-        )
+            label_visibility="collapsed", key="chat_input")
     with col_btn:
-        send = st.button("Ask", use_container_width=True)
+        send = st.button("Ask", width='stretch')
 
     st.markdown("<p style='color:#555555;font-size:0.8rem;margin-top:8px;'>Try asking:</p>",
                 unsafe_allow_html=True)
-    suggestions = [
-        "What is the PEG ratio?",
-        "How do you identify a ten-bagger?",
-        "What sectors do you prefer?",
-        "How do you size a position?",
-    ]
+    suggestions = ["What is the PEG ratio?", "How do you identify a ten-bagger?",
+                   "What sectors do you prefer?", "How do you size a position?"]
     for col, sug in zip(st.columns(len(suggestions)), suggestions):
         with col:
-            if st.button(sug, key=f"sug_{sug}", use_container_width=True):
+            if st.button(sug, key=f"sug_{sug}", width='stretch'):
                 user_question = sug
                 send = True
 
@@ -291,18 +313,386 @@ with tab_chat:
 
 
 # =============================================================================
-# TAB 2 -- FINANCIAL DASHBOARD
-# Displays fin_data_df: key financial ratios for all selected stocks
-# Default: Dow Jones 30  (same as professor's notebook)
+# TAB 2 -- LYNCH STOCK ANALYZER
+# Single-stock deep dive: fundamentals, scorecard, backtest
+# Uses yfinance for live data
 # =============================================================================
-with tab_stocks:
+with tab_analyzer:
+    st.markdown(
+        "<h2 style='margin-bottom:0.2rem;'>Lynch Stock Analyzer</h2>"
+        "<p style='color:#A0A0A0;font-size:0.9rem;'>"
+        "Evaluate any stock through Peter Lynch's PEG-ratio lens and backtest his strategy.</p>",
+        unsafe_allow_html=True)
+    st.divider()
+
+    col_t, col_b = st.columns([4, 1])
+    with col_t:
+        ticker_input = st.text_input(
+            "ticker", placeholder="e.g. META, AAPL, MSFT",
+            label_visibility="collapsed")
+    with col_b:
+        analyze_btn = st.button("Analyze", width='stretch')
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def safe_get(info, *keys, default=None):
+        for k in keys:
+            v = info.get(k)
+            if v is not None:
+                return v
+        return default
+
+    def fetch_fundamentals(ticker):
+        try:
+            from yahooquery import Ticker
+            obj = Ticker(ticker)
+            info = obj.financial_data.get(ticker, {})
+            summary = obj.summary_detail.get(ticker, {})
+            profile = obj.asset_profile.get(ticker, {})
+            key_stats = obj.key_stats.get(ticker, {})
+
+            if not isinstance(info, dict):
+                info = {}
+            if not isinstance(summary, dict):
+                summary = {}
+            if not isinstance(profile, dict):
+                profile = {}
+            if not isinstance(key_stats, dict):
+                key_stats = {}
+
+            all_data = {**info, **summary, **profile, **key_stats}
+
+            pe         = all_data.get("trailingPE") or all_data.get("forwardPE")
+            eps_growth = all_data.get("earningsGrowth") or all_data.get("revenueGrowth")
+            if eps_growth is not None:
+                eps_growth *= 100
+            peg = None
+            if pe and eps_growth and eps_growth > 0:
+                peg = pe / eps_growth
+
+            market_cap = all_data.get("marketCap")
+            if market_cap:
+                if market_cap >= 1e12:   mc_str = f"${market_cap/1e12:.1f}T"
+                elif market_cap >= 1e9:  mc_str = f"${market_cap/1e9:.1f}B"
+                else:                    mc_str = f"${market_cap/1e6:.0f}M"
+            else:
+                mc_str = "N/A"
+
+            price      = all_data.get("currentPrice") or all_data.get("regularMarketPrice")
+            shares     = key_stats.get("sharesOutstanding")
+            cash_total = all_data.get("totalCash")
+            revenue_g  = all_data.get("revenueGrowth")
+            if revenue_g is not None:
+                revenue_g *= 100
+            inst_own    = key_stats.get("heldPercentInstitutions")
+            insider_own = key_stats.get("heldPercentInsiders")
+            dividend    = summary.get("dividendYield") or summary.get("trailingAnnualDividendYield")
+
+            def classify():
+                if eps_growth is None:     return "Unknown", "#A0A0A0"
+                if eps_growth < 5:         return "Slow Grower", "#A0A0A0"
+                if eps_growth < 15:        return "Stalwart", "#4A90D9"
+                if eps_growth >= 20:       return "Fast Grower", "#4CAF50"
+                return "Moderate Grower", "#FFC107"
+
+            category, cat_color = classify()
+            return {
+                "name":           profile.get("longName") or ticker,
+                "sector":         profile.get("sector", "N/A"),
+                "industry":       profile.get("industry", "N/A"),
+                "price":          price,
+                "pe":             pe,
+                "eps_growth":     eps_growth,
+                "revenue_growth": revenue_g,
+                "peg":            peg,
+                "market_cap":     mc_str,
+                "debt_equity":    all_data.get("debtToEquity"),
+                "roe":            all_data.get("returnOnEquity"),
+                "dividend":       dividend,
+                "cash_per_share": (cash_total/shares) if cash_total and shares else None,
+                "fcf":            all_data.get("freeCashflow"),
+                "ps_ratio":       all_data.get("priceToSalesTrailing12Months") or summary.get("priceToSalesTrailing12Months"),
+                "current_ratio":  all_data.get("currentRatio"),
+                "inst_own":       inst_own,
+                "insider_own":    insider_own,
+                "category":       category,
+                "cat_color":      cat_color,
+                "description":    profile.get("longBusinessSummary", ""),
+            }
+        except Exception as exc:
+            return {"error": str(exc), "name": ticker}
+
+    def fetch_history(ticker, period="5y"):
+        try:
+            from yahooquery import Ticker
+            obj = Ticker(ticker)
+            df = obj.history(period=period)
+            if isinstance(df.index, pd.MultiIndex):
+                df = df.xs(ticker, level="symbol")
+            df.index = pd.to_datetime(df.index)
+            df.columns = [c.capitalize() for c in df.columns]
+            return df
+        except Exception:
+            return pd.DataFrame()
+
+    def lynch_backtest(hist):
+        if hist.empty or len(hist) < 250:
+            return pd.DataFrame()
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = hist.columns.get_level_values(0)
+        df = pd.DataFrame(index=hist.index)
+        df["Close"] = hist["Close"].squeeze().astype(float)
+        df["MA200"] = df["Close"].rolling(200).mean()
+        df["MA50"]  = df["Close"].rolling(50).mean()
+        df["signal"] = 0
+        in_trade = False
+        for i in range(200, len(df)):
+            close = float(df["Close"].iloc[i])
+            ma200 = float(df["MA200"].iloc[i])
+            if not in_trade and close > ma200 and close < ma200 * 1.10:
+                df.iloc[i, df.columns.get_loc("signal")] = 1
+                in_trade = True
+            elif in_trade and close > ma200 * 1.30:
+                df.iloc[i, df.columns.get_loc("signal")] = -1
+                in_trade = False
+        df["daily_ret"] = df["Close"].pct_change()
+        df["position"]  = df["signal"].replace(0, np.nan).ffill().fillna(0).clip(lower=0)
+        df["strat_ret"] = df["position"] * df["daily_ret"]
+        df["strat_cum"] = (1 + df["strat_ret"]).cumprod()
+        df["bnh_cum"]   = (1 + df["daily_ret"]).cumprod()
+        return df.dropna(subset=["MA200"])
+
+    # ── Output ────────────────────────────────────────────────────────────────
+    if analyze_btn and ticker_input.strip():
+        tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
+        for ticker in tickers:
+            with st.spinner(f"Fetching data for {ticker}..."):
+                fund = fetch_fundamentals(ticker)
+                hist = fetch_history(ticker)
+
+            if "error" in fund:
+                st.error(f"{ticker}: {fund['error']}")
+                continue
+
+            # Company header
+            st.markdown(
+                f"<h3 style='margin-top:1.5rem;color:#FFFFFF;'>{fund['name']} "
+                f"<span style='color:#A0A0A0;font-size:0.95rem;'>({ticker})</span></h3>"
+                f"<p style='color:#A0A0A0;font-size:0.85rem;margin-top:-8px;'>"
+                f"{fund['sector']} · {fund['industry']}</p>",
+                unsafe_allow_html=True)
+
+            # Category badge
+            st.markdown(
+                f"<span style='background:{fund['cat_color']}22;color:{fund['cat_color']};"
+                f"border:1px solid {fund['cat_color']}55;border-radius:6px;"
+                f"padding:3px 10px;font-size:0.8rem;font-weight:700;'>"
+                f"Lynch Category: {fund['category']}</span>",
+                unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Metric row 1
+            price_str = f"${fund['price']:.2f}"    if fund["price"]         else "N/A"
+            pe_str    = f"{fund['pe']:.1f}x"        if fund["pe"]            else "N/A"
+            epsg_str  = f"{fund['eps_growth']:.1f}%" if fund["eps_growth"] is not None else "N/A"
+            roe_str   = f"{fund['roe']*100:.1f}%"   if fund["roe"] is not None else "N/A"
+            div_str   = f"{fund['dividend']*100:.2f}%" if fund["dividend"]   else "0%"
+            for col, val, lbl in zip(st.columns(5),
+                [price_str, pe_str, epsg_str, roe_str, div_str],
+                ["Price", "P/E Ratio", "EPS Growth", "ROE", "Dividend Yield"]):
+                col.markdown(
+                    f"<div class='metric-card'><div class='value'>{val}</div>"
+                    f"<div class='label'>{lbl}</div></div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Metric row 2
+            peg_str = f"{fund['peg']:.2f}"             if fund["peg"]            else "N/A"
+            de_str  = f"{fund['debt_equity']:.0f}%"    if fund["debt_equity"]    else "N/A"
+            ps_str  = f"{fund['ps_ratio']:.1f}x"       if fund["ps_ratio"]       else "N/A"
+            cr_str  = f"{fund['current_ratio']:.1f}x"  if fund["current_ratio"]  else "N/A"
+            ins_str = f"{fund['insider_own']*100:.1f}%" if fund["insider_own"]    else "N/A"
+            for col, val, lbl in zip(st.columns(5),
+                [peg_str, de_str, ps_str, cr_str, ins_str],
+                ["PEG Ratio", "Debt/Equity", "P/S Ratio", "Current Ratio", "Insider Ownership"]):
+                col.markdown(
+                    f"<div class='metric-card'><div class='value'>{val}</div>"
+                    f"<div class='label'>{lbl}</div></div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Scorecard + description
+            score_col, desc_col = st.columns([3, 2])
+            with score_col:
+                st.markdown("**Lynch Full Scorecard**")
+
+                def check(label, value, good, warn, bad, fmt=None, invert=False):
+                    if value is None:
+                        icon, color, display = "o", "#555555", "N/A"
+                    else:
+                        display = fmt(value) if fmt else str(value)
+                        if invert:
+                            if value <= good:   icon, color = "v", "#4CAF50"
+                            elif value <= warn: icon, color = "!", "#FFC107"
+                            else:               icon, color = "x", "#C8102E"
+                        else:
+                            if value >= good:   icon, color = "v", "#4CAF50"
+                            elif value >= warn: icon, color = "!", "#FFC107"
+                            else:               icon, color = "x", "#C8102E"
+                    icon_html = {"v": "&#10003;", "!": "&#9888;", "x": "&#10007;", "o": "&#9711;"}
+                    st.markdown(
+                        f"<div class='scorecard-row'>"
+                        f"<span style='color:#C0C8D0;'>"
+                        f"<span style='color:{color};font-weight:700;'>{icon_html[icon]}</span>"
+                        f" {label}</span>"
+                        f"<span style='color:{color};font-weight:700;'>{display}</span>"
+                        f"</div>", unsafe_allow_html=True)
+
+                check("PEG Ratio (< 1 = bargain)", fund["peg"],
+                      good=1.0, warn=2.0, bad=99, fmt=lambda v: f"{v:.2f}", invert=True)
+                check("EPS Growth (> 15% = fast grower)", fund["eps_growth"],
+                      good=15, warn=5, bad=0, fmt=lambda v: f"{v:.1f}%")
+                check("Debt/Equity (< 80% = healthy)", fund["debt_equity"],
+                      good=40, warn=80, bad=999, fmt=lambda v: f"{v:.0f}%", invert=True)
+                check("ROE (> 15% = strong)",
+                      fund["roe"]*100 if fund["roe"] else None,
+                      good=15, warn=10, bad=0, fmt=lambda v: f"{v:.1f}%")
+                check("Current Ratio (> 2 = safe)", fund["current_ratio"],
+                      good=2.0, warn=1.0, bad=0, fmt=lambda v: f"{v:.1f}x")
+                check("Insider Ownership (> 5% = skin in game)",
+                      fund["insider_own"]*100 if fund["insider_own"] else None,
+                      good=5, warn=1, bad=0, fmt=lambda v: f"{v:.1f}%")
+                check("Institutional Ownership (< 50% = undiscovered)",
+                      fund["inst_own"]*100 if fund["inst_own"] else None,
+                      good=50, warn=75, bad=999, fmt=lambda v: f"{v:.1f}%", invert=True)
+                check("P/S Ratio (< 2 = reasonable)", fund["ps_ratio"],
+                      good=1.0, warn=2.0, bad=99, fmt=lambda v: f"{v:.1f}x", invert=True)
+
+                scores = sum([
+                    1 if fund["peg"] and fund["peg"] < 1 else 0,
+                    1 if fund["eps_growth"] and fund["eps_growth"] > 15 else 0,
+                    1 if fund["debt_equity"] and fund["debt_equity"] < 80 else 0,
+                    1 if fund["roe"] and fund["roe"] > 0.15 else 0,
+                    1 if fund["current_ratio"] and fund["current_ratio"] > 2 else 0,
+                    1 if fund["insider_own"] and fund["insider_own"] > 0.05 else 0,
+                ])
+                if scores >= 5:    verdict, vc = "Strong Lynch Pick",          "#4CAF50"
+                elif scores >= 3:  verdict, vc = "Decent Candidate",           "#FFC107"
+                else:              verdict, vc = "Doesn't Pass Lynch's Test",  "#C8102E"
+                st.markdown(
+                    f"<div style='margin-top:12px;padding:10px 14px;"
+                    f"background:{vc}22;border:1px solid {vc}55;border-radius:8px;"
+                    f"font-weight:700;color:{vc};font-size:0.95rem;'>"
+                    f"{verdict} &nbsp;·&nbsp; {scores}/6 criteria met</div>",
+                    unsafe_allow_html=True)
+
+            with desc_col:
+                if fund["description"]:
+                    st.markdown("**About the Company**")
+                    st.markdown(
+                        f"<div style='font-size:0.83rem;color:#A0A0A0;line-height:1.6;'>"
+                        f"{fund['description'][:500]}...</div>",
+                        unsafe_allow_html=True)
+
+            # Charts
+            if not hist.empty:
+                bt = lynch_backtest(hist)
+                chart_col, bt_col = st.columns([3, 2])
+
+                with chart_col:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=hist.index.tolist(),
+                        y=hist["Close"].squeeze().astype(float).tolist(),
+                        mode="lines", name="Price",
+                        line=dict(color="#4A90D9", width=1.5)))
+                    if not bt.empty:
+                        fig.add_trace(go.Scatter(
+                            x=bt.index.tolist(), y=bt["MA200"].tolist(),
+                            mode="lines", name="200-day MA",
+                            line=dict(color="#C8102E", width=1, dash="dot")))
+                        fig.add_trace(go.Scatter(
+                            x=bt.index.tolist(), y=bt["MA50"].tolist(),
+                            mode="lines", name="50-day MA",
+                            line=dict(color="#FFC107", width=1, dash="dot")))
+                        buys  = bt[bt["signal"] ==  1]
+                        sells = bt[bt["signal"] == -1]
+                        if not buys.empty:
+                            fig.add_trace(go.Scatter(
+                                x=buys.index.tolist(), y=buys["Close"].tolist(),
+                                mode="markers", name="Buy Signal",
+                                marker=dict(color="#4CAF50", symbol="triangle-up", size=10)))
+                        if not sells.empty:
+                            fig.add_trace(go.Scatter(
+                                x=sells.index.tolist(), y=sells["Close"].tolist(),
+                                mode="markers", name="Sell Signal",
+                                marker=dict(color="#C8102E", symbol="triangle-down", size=10)))
+                    fig.update_layout(
+                        title=f"{ticker} -- 5-Year Price + Moving Averages",
+                        paper_bgcolor="#1A1A1A", plot_bgcolor="#2A2A2A",
+                        font=dict(color="#E8E8E8", family="Lato"),
+                        legend=dict(bgcolor="#2A2A2A", bordercolor="#3D3D3D", font=dict(size=11)),
+                        xaxis=dict(gridcolor="#3D3D3D"), yaxis=dict(gridcolor="#3D3D3D", title="Price ($)"),
+                        margin=dict(l=10, r=10, t=40, b=10), height=320)
+                    st.plotly_chart(fig, width='stretch')
+
+                with bt_col:
+                    if not bt.empty:
+                        fig2 = go.Figure()
+                        fig2.add_trace(go.Scatter(
+                            x=bt.index.tolist(), y=bt["strat_cum"].tolist(),
+                            mode="lines", name="Lynch Strategy",
+                            line=dict(color="#C8102E", width=2)))
+                        fig2.add_trace(go.Scatter(
+                            x=bt.index.tolist(), y=bt["bnh_cum"].tolist(),
+                            mode="lines", name="Buy & Hold",
+                            line=dict(color="#4A90D9", width=1.5, dash="dot")))
+                        fig2.update_layout(
+                            title="Strategy vs Buy & Hold",
+                            paper_bgcolor="#1A1A1A", plot_bgcolor="#2A2A2A",
+                            font=dict(color="#E8E8E8", family="Lato"),
+                            legend=dict(bgcolor="#2A2A2A", bordercolor="#3D3D3D", font=dict(size=11)),
+                            xaxis=dict(gridcolor="#3D3D3D"),
+                            yaxis=dict(gridcolor="#3D3D3D", title="Cumulative Return"),
+                            margin=dict(l=10, r=10, t=40, b=10), height=320)
+                        st.plotly_chart(fig2, width='stretch')
+
+                        strat_final = bt["strat_cum"].iloc[-1]
+                        bnh_final   = bt["bnh_cum"].iloc[-1]
+                        n_trades    = int((bt["signal"] != 0).sum())
+                        st.markdown(
+                            f"<div style='font-size:0.82rem;color:#A0A0A0;text-align:center;'>"
+                            f"Strategy: <b style='color:#C8102E;'>+{(strat_final-1)*100:.1f}%</b>"
+                            f" &nbsp;|&nbsp; "
+                            f"Buy & Hold: <b style='color:#4A90D9;'>+{(bnh_final-1)*100:.1f}%</b>"
+                            f" &nbsp;|&nbsp; Signals fired: <b>{n_trades}</b></div>",
+                            unsafe_allow_html=True)
+            st.divider()
+
+    elif analyze_btn:
+        st.warning("Please enter at least one ticker symbol.")
+
+    with st.expander("Lynch's PEG Ratio Guide"):
+        st.markdown("""
+**PEG Ratio** = P/E / Earnings Growth Rate
+
+| PEG Value | Lynch's Interpretation |
+|-----------|----------------------|
+| < 0.5     | Hidden gem -- potentially a ten-bagger |
+| 0.5 - 1.0 | Bargain -- good risk/reward |
+| 1.0 - 2.0 | Fairly priced -- acceptable if story holds |
+| > 2.0     | Expensive -- growth must be exceptional |
+        """)
+
+
+# =============================================================================
+# TAB 3 -- FINANCIAL RATIOS DASHBOARD
+# fin_data_df: key ratios for all selected stocks (Dow Jones 30 default)
+# =============================================================================
+with tab_dashboard:
     st.markdown(
         "<h2 style='margin-bottom:0.2rem;'>Financial Ratios Dashboard</h2>"
         "<p style='color:#A0A0A0;font-size:0.9rem;'>"
         "Key financial ratios for all selected stocks (fin_data_df). "
         "Default portfolio: Dow Jones 30.</p>",
-        unsafe_allow_html=True,
-    )
+        unsafe_allow_html=True)
     st.divider()
 
     if "overview_tickers" not in st.session_state:
@@ -395,9 +785,8 @@ with tab_stocks:
         f"<span style='color:#4CAF50;'>Green</span> = above threshold &nbsp; "
         f"<span style='color:#C8102E;'>Red</span> = below threshold &nbsp; "
         f"<span style='color:#FFC107;'>Yellow</span> = moderate</p>",
-        unsafe_allow_html=True,
-    )
-    st.dataframe(styled_ov, use_container_width=True, height=530)
+        unsafe_allow_html=True)
+    st.dataframe(styled_ov, width='stretch', height=530)
 
     st.divider()
     with st.expander("Lynch's PEG Ratio Guide"):
@@ -414,29 +803,21 @@ with tab_stocks:
 
 
 # =============================================================================
-# TAB 3 -- K-MEANS STOCK SCREENER
-# Strictly follows professor's PeterLynch_Assignment.ipynb:
-#   Data:   yahooquery Ticker.financial_data  (static fallback)
-#   Step 1: data_full = fin_data_df.T
-#   Step 2: data = data_full.fillna(0)
-#   Step 3: drop non-numeric cols, to_numpy()
-#   Step 4: MinMaxScaler
-#   Step 5: KMeans(n_clusters=4, random_state=100)
-#   Step 6: Long = cluster 3,  Short = cluster 2
-#   Plot:   X=Value, Y=Quality
+# TAB 4 -- K-MEANS STOCK SCREENER
+# Strictly follows professor's notebook:
+#   yahooquery Ticker.financial_data -> fin_data_df.T -> fillna(0) ->
+#   drop non-numeric cols -> MinMaxScaler -> KMeans(4, random_state=100)
+#   Long = cluster 3,  Short = cluster 2
 # =============================================================================
 with tab_kmeans:
     st.markdown(
         "<h2 style='margin-bottom:0.2rem;'>K-Means Stock Screener</h2>"
         "<p style='color:#A0A0A0;font-size:0.9rem;'>"
-        "Replicates the professor's K-Means algorithm exactly using yahooquery. "
-        "Cluster 3 = Long, Cluster 2 = Short. "
-        "Default: Dow Jones 30.</p>",
-        unsafe_allow_html=True,
-    )
+        "Replicates professor's K-Means algorithm exactly using yahooquery. "
+        "Cluster 3 = Long, Cluster 2 = Short. Default: Dow Jones 30.</p>",
+        unsafe_allow_html=True)
     st.divider()
 
-    # Columns to drop before clustering (professor's exact list)
     DROP_COLS = [
         "maxAge","currentPrice","targetHighPrice","targetLowPrice",
         "targetMeanPrice","targetMedianPrice","recommendationMean",
@@ -447,32 +828,24 @@ with tab_kmeans:
     with col_l:
         ticker_input_km = st.text_input(
             "Stock universe (comma-separated -- Dow Jones 30 by default)",
-            value=", ".join(DOW30), key="km_tickers",
-        )
+            value=", ".join(DOW30), key="km_tickers")
     with col_r:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_km = st.button("Run K-Means", use_container_width=True, key="run_km_btn")
+        run_km = st.button("Run K-Means", width='stretch', key="run_km_btn")
 
     @st.cache_data(ttl=3600, show_spinner=False)
-    def fetch_fin_data_yahooquery(tickers: tuple) -> pd.DataFrame:
-        """
-        Fetch financial_data using yahooquery (professor's library).
-        Returns fin_data_df: metrics as rows, tickers as columns.
-        Falls back to static data when yahooquery is unavailable.
-        """
+    def fetch_fin_data_yahooquery(tickers):
         live_cols = {}
         try:
             from yahooquery import Ticker
             obj = Ticker(list(tickers))
-            raw = obj.financial_data          # dict: {ticker: {metric: value}}
+            raw = obj.financial_data
             if isinstance(raw, dict):
                 for sym, data in raw.items():
                     if isinstance(data, dict) and len(data) > 3:
                         live_cols[sym] = data
         except Exception:
             pass
-
-        # Merge live + static
         combined = {}
         live_count = 0
         for t in tickers:
@@ -483,54 +856,27 @@ with tab_kmeans:
                 combined[t] = FIN_DATA_STATIC[t]
             else:
                 combined[t] = {}
-
         static_used = len(tickers) - live_count
         if static_used > 0:
-            st.info(
-                f"Using cached data for {static_used} stock(s). "
-                f"Live data retrieved for {live_count} stock(s)."
-            )
+            st.info(f"Using cached data for {static_used} stock(s). Live data for {live_count} stock(s).")
+        return pd.DataFrame.from_dict(combined, orient="index").T
 
-        # Build fin_data_df: tickers as columns, metrics as rows
-        fin_data_df = pd.DataFrame.from_dict(combined, orient="index").T
-        return fin_data_df
-
-    def run_professor_kmeans(fin_data_df: pd.DataFrame):
-        """
-        Exact replication of professor's notebook code:
-
-            data_full = fin_data_df.T
-            data = data_full.fillna(0)
-            X = data.drop([non_numeric_cols], axis=1).to_numpy()
-            scaler = MinMaxScaler()
-            X = scaler.fit_transform(X)
-            model = KMeans(n_clusters=4, random_state=100)
-            model.fit(X)
-            yhat = model.predict(X)
-            Long  = data.index[yhat == 3]
-            Short = data.index[yhat == 2]
-        """
-        data_full = fin_data_df.T                # tickers as rows
+    def run_professor_kmeans(fin_data_df):
+        data_full = fin_data_df.T
         data = data_full.fillna(0)
-
         drop = [c for c in DROP_COLS if c in data.columns]
         numeric_data = data.drop(columns=drop, errors="ignore")
         numeric_data = numeric_data.apply(pd.to_numeric, errors="coerce").fillna(0)
-
-        if numeric_data.shape[0] < 4:
+        if numeric_data.shape[0] < 4 or numeric_data.shape[1] == 0:
             return None, None, [], [], numeric_data
-
         X = numeric_data.to_numpy()
         scaler = MinMaxScaler()
         X_scaled = scaler.fit_transform(X)
-
         model = KMeans(n_clusters=4, random_state=100, n_init=10)
         model.fit(X_scaled)
         yhat = model.predict(X_scaled)
-
         long_stocks  = list(numeric_data.index[yhat == 3])
         short_stocks = list(numeric_data.index[yhat == 2])
-
         return X_scaled, yhat, long_stocks, short_stocks, numeric_data
 
     if run_km:
@@ -540,7 +886,6 @@ with tab_kmeans:
         else:
             with st.spinner(f"Fetching financial data for {len(tickers_km)} stocks via yahooquery..."):
                 fin_df = fetch_fin_data_yahooquery(tickers_km)
-
             with st.spinner("Running K-Means..."):
                 X_scaled, yhat, long_list, short_list, numeric_data = run_professor_kmeans(fin_df)
 
@@ -550,28 +895,25 @@ with tab_kmeans:
                 st.success(f"K-Means complete -- {len(tickers_km)} stocks in 4 clusters")
 
                 with st.expander("Methodology (follows professor's notebook exactly)"):
-                    st.markdown(f"""
+                    st.markdown("""
 **Library:** `yahooquery` -- same as professor's `from yahooquery import Ticker`
 
-**Steps (copied from notebook):**
+**Steps (professor's exact code):**
 1. `ticker = Ticker(stock_symbol_list)`
 2. `fin_data_df = pd.DataFrame.from_dict(ticker.financial_data, orient='index').T`
-3. `data_full = fin_data_df.T` -- transpose (tickers = rows)
-4. `data = data_full.fillna(0)` -- fill NaN with 0
-5. Drop non-numeric columns, convert to numpy
-6. `scaler = MinMaxScaler()` -- scale to [0,1]
-7. `model = KMeans(n_clusters=4, random_state=100)`
-8. `Long Stocks  = data.index[yhat == 3]`
-9. `Short Stocks = data.index[yhat == 2]`
+3. `data = fin_data_df.T.fillna(0)`
+4. Drop non-numeric columns, convert to numpy
+5. `scaler = MinMaxScaler()` -- scale to [0,1]
+6. `model = KMeans(n_clusters=4, random_state=100)`
+7. `Long Stocks  = data.index[yhat == 3]`
+8. `Short Stocks = data.index[yhat == 2]`
                     """)
 
                 st.divider()
-
-                # Value-Quality scatter plot (professor's pyplot chart in Plotly)
                 st.markdown("#### Value-Quality Cluster Chart")
+
                 C = {0:"#A0A0A0", 1:"#FFC107", 2:"#C8102E", 3:"#4CAF50"}
                 L = {0:"Neutral A", 1:"Neutral B", 2:"Short", 3:"Long"}
-
                 fig = go.Figure()
                 tl = list(numeric_data.index)
                 for cid in range(4):
@@ -584,25 +926,19 @@ with tab_kmeans:
                         text=[tl[i] for i in ix],
                         textposition="top center",
                         textfont=dict(size=10, color="#E8E8E8"),
-                        marker=dict(size=14, color=C[cid],
-                                    line=dict(color="#1A1A1A", width=1.5)),
+                        marker=dict(size=14, color=C[cid], line=dict(color="#1A1A1A", width=1.5)),
                         hovertemplate=f"<b>%{{text}}</b><br>Cluster: {L[cid]}<br>"
-                                      "Value: %{x:.3f}<br>Quality: %{y:.3f}<extra></extra>",
-                    ))
-
+                                      "Value: %{x:.3f}<br>Quality: %{y:.3f}<extra></extra>"))
                 fig.update_layout(
                     paper_bgcolor="#1A1A1A", plot_bgcolor="#2A2A2A",
                     font=dict(color="#E8E8E8", family="Lato"),
                     legend=dict(bgcolor="#2A2A2A", bordercolor="#3D3D3D", font=dict(size=12)),
                     xaxis=dict(title="Value", gridcolor="#3D3D3D", zeroline=False),
                     yaxis=dict(title="Quality", gridcolor="#3D3D3D", zeroline=False),
-                    margin=dict(l=10, r=10, t=20, b=10), height=480,
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                    margin=dict(l=10, r=10, t=20, b=10), height=480)
+                st.plotly_chart(fig, width='stretch')
 
                 st.divider()
-
-                # Long / Short lists
                 long_col, short_col = st.columns(2)
                 with long_col:
                     st.markdown("<h3 style='color:#4CAF50;'>Long Stocks</h3>", unsafe_allow_html=True)
@@ -617,9 +953,7 @@ with tab_kmeans:
                                 f"<span style='font-size:0.82rem;color:#A0A0A0;'>"
                                 f"EPS Growth: <b>{round(eg*100,1) if eg else 'N/A'}%</b>"
                                 f" | ROE: <b>{round(roe*100,1) if roe else 'N/A'}%</b>"
-                                f"</span></div>",
-                                unsafe_allow_html=True,
-                            )
+                                f"</span></div>", unsafe_allow_html=True)
                     else:
                         st.info("No Long stocks in this run.")
 
@@ -636,15 +970,11 @@ with tab_kmeans:
                                 f"<span style='font-size:0.82rem;color:#A0A0A0;'>"
                                 f"EPS Growth: <b>{round(eg*100,1) if eg else 'N/A'}%</b>"
                                 f" | ROE: <b>{round(roe*100,1) if roe else 'N/A'}%</b>"
-                                f"</span></div>",
-                                unsafe_allow_html=True,
-                            )
+                                f"</span></div>", unsafe_allow_html=True)
                     else:
                         st.info("No Short stocks in this run.")
 
                 st.divider()
-
-                # Full financial data table (fin_data_df display)
                 st.markdown("#### Full Financial Data (fin_data_df)")
                 disp_cols = ["earningsGrowth","revenueGrowth","returnOnEquity",
                              "returnOnAssets","grossMargins","operatingMargins",
@@ -667,12 +997,9 @@ with tab_kmeans:
                         {"selector":"td","props":[("font-size","0.82rem"),
                                                   ("text-align","center"),("padding","5px 8px")]},
                     ]),
-                    use_container_width=True, height=420,
-                )
+                    width='stretch', height=420)
     else:
         st.markdown(
             "<div style='text-align:center;padding:4rem 0;color:#555555;font-style:italic;'>"
             "Configure the stock universe above and click <b>Run K-Means</b> to generate signals."
-            "</div>",
-            unsafe_allow_html=True,
-        )
+            "</div>", unsafe_allow_html=True)
