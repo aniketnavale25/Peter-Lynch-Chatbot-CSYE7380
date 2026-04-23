@@ -6,7 +6,7 @@ Part II : Lynch Stock Analyzer  (PEG ratio + fundamentals + backtest)
 """
 
 import streamlit as st
-import yfinance as yf
+from yahooquery import Ticker as YQTicker
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -340,21 +340,37 @@ with tab_stocks:
 
 
     def fetch_fundamentals(ticker: str) -> dict:
-        # ── Attempt live Yahoo Finance data ──────────────────────────────────
+        # ── Attempt live data via yahooquery ──────────────────────────────────
         try:
-            stk  = yf.Ticker(ticker)
-            info = stk.info
+            stk = YQTicker(ticker)
 
-            pe         = safe_get(info, "trailingPE", "forwardPE")
-            eps_growth = safe_get(info, "earningsGrowth", "revenueGrowth")
+            fin     = stk.financial_data.get(ticker, {})
+            summary = stk.summary_detail.get(ticker, {})
+            stats   = stk.key_stats.get(ticker, {})
+            profile = stk.asset_profile.get(ticker, {})
+            price_d = stk.price.get(ticker, {})
+
+            # yahooquery returns a string on error (e.g. "No fundamentals data found")
+            if not isinstance(fin, dict):     fin     = {}
+            if not isinstance(summary, dict): summary = {}
+            if not isinstance(stats, dict):   stats   = {}
+            if not isinstance(profile, dict): profile = {}
+            if not isinstance(price_d, dict): price_d = {}
+
+            price      = fin.get("currentPrice") or price_d.get("regularMarketPrice")
+            pe         = summary.get("trailingPE") or summary.get("forwardPE")
+            eps_growth = fin.get("earningsGrowth")
             if eps_growth is not None:
                 eps_growth *= 100
+            revenue_g  = fin.get("revenueGrowth")
+            if revenue_g is not None:
+                revenue_g *= 100
 
             peg = None
             if pe and eps_growth and eps_growth > 0:
                 peg = pe / eps_growth
 
-            market_cap = info.get("marketCap")
+            market_cap = summary.get("marketCap") or price_d.get("marketCap")
             if market_cap:
                 if market_cap >= 1e12:
                     mc_str = f"${market_cap/1e12:.1f}T"
@@ -365,19 +381,25 @@ with tab_stocks:
             else:
                 mc_str = "N/A"
 
-            price      = info.get("currentPrice") or info.get("regularMarketPrice")
-            shares     = info.get("sharesOutstanding")
-            cash_total = info.get("totalCash")
-            cash_per_share = (cash_total / shares) if cash_total and shares else None
+            shares         = stats.get("sharesOutstanding")
+            cash_total     = fin.get("totalCash")
+            cash_per_share = fin.get("totalCashPerShare") or (
+                cash_total / shares if cash_total and shares else None
+            )
 
-            fcf         = info.get("freeCashflow")
-            ps_ratio    = info.get("priceToSalesTrailing12Months")
-            current_r   = info.get("currentRatio")
-            inst_own    = info.get("institutionalOwnershipPercent") or info.get("heldPercentInstitutions")
-            insider_own = info.get("heldPercentInsiders")
-            revenue_g   = info.get("revenueGrowth")
-            if revenue_g is not None:
-                revenue_g *= 100
+            fcf         = fin.get("freeCashflow")
+            ps_ratio    = summary.get("priceToSalesTrailing12Months")
+            current_r   = fin.get("currentRatio")
+            inst_own    = stats.get("heldPercentInstitutions")
+            insider_own = stats.get("heldPercentInsiders")
+            roe         = fin.get("returnOnEquity")
+            dividend    = summary.get("dividendYield")
+            debt_equity = fin.get("debtToEquity")
+
+            name        = price_d.get("longName") or ticker
+            sector      = profile.get("sector", "N/A")
+            industry    = profile.get("industry", "N/A")
+            description = profile.get("longBusinessSummary", "")
 
             def classify():
                 if eps_growth is None:
@@ -392,37 +414,36 @@ with tab_stocks:
 
             category, cat_color = classify()
 
-            # Treat a nearly-empty info dict as a failure so we fall back to cache
             if not price and pe is None and eps_growth is None:
-                raise ValueError("live API returned no usable data")
+                raise ValueError("yahooquery returned no usable data")
 
             return {
-                "name":          info.get("longName", ticker),
-                "sector":        info.get("sector", "N/A"),
-                "industry":      info.get("industry", "N/A"),
-                "price":         price,
-                "pe":            pe,
-                "eps_growth":    eps_growth,
+                "name":           name,
+                "sector":         sector,
+                "industry":       industry,
+                "price":          price,
+                "pe":             pe,
+                "eps_growth":     eps_growth,
                 "revenue_growth": revenue_g,
-                "peg":           peg,
-                "market_cap":    mc_str,
-                "debt_equity":   info.get("debtToEquity"),
-                "roe":           info.get("returnOnEquity"),
-                "dividend":      info.get("dividendYield"),
+                "peg":            peg,
+                "market_cap":     mc_str,
+                "debt_equity":    debt_equity,
+                "roe":            roe,
+                "dividend":       dividend,
                 "cash_per_share": cash_per_share,
-                "fcf":           fcf,
-                "ps_ratio":      ps_ratio,
-                "current_ratio": current_r,
-                "inst_own":      inst_own,
-                "insider_own":   insider_own,
-                "category":      category,
-                "cat_color":     cat_color,
-                "description":   info.get("longBusinessSummary", ""),
+                "fcf":            fcf,
+                "ps_ratio":       ps_ratio,
+                "current_ratio":  current_r,
+                "inst_own":       inst_own,
+                "insider_own":    insider_own,
+                "category":       category,
+                "cat_color":      cat_color,
+                "description":    description,
             }
         except Exception:
             pass
 
-        # ── Cache fallback: derive what we can from local OHLCV data ─────────
+        # ── Cache fallback ────────────────────────────────────────────────────
         cached = stock_cache.compute_fundamentals(ticker)
         if cached is not None:
             return cached
@@ -431,12 +452,21 @@ with tab_stocks:
 
 
     def fetch_history(ticker: str, period: str = "5y") -> pd.DataFrame:
-        # ── Attempt live Yahoo Finance data ──────────────────────────────────
+        # ── Attempt live data via yahooquery ──────────────────────────────────
         try:
-            df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            stk = YQTicker(ticker)
+            df  = stk.history(period=period)
+
+            if isinstance(df.index, pd.MultiIndex):
+                df = df.xs(ticker, level=0)
+
             if not df.empty:
+                # yahooquery returns lowercase column names
+                df = df.rename(columns={
+                    "open": "Open", "high": "High", "low": "Low",
+                    "close": "Close", "adjclose": "Adj Close", "volume": "Volume",
+                })
+                df.index.name = "Date"
                 return df
         except Exception:
             pass
