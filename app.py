@@ -504,8 +504,7 @@ with tab_stocks:
             if fund.get("from_cache"):
                 st.info(
                     f"Live data unavailable for **{ticker}** (Yahoo Finance rate-limit). "
-                    "Showing price history from local cache — ratio metrics (PE, PEG, etc.) "
-                    "require a live connection and are shown as N/A."
+                    "Showing historical data from local cache(2020.1-2026.4)"
                 )
 
             # ── Company header ────────────────────────────────────────────────
