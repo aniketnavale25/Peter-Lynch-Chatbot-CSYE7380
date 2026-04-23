@@ -1,6 +1,5 @@
 """
 app.py  --  Peter Lynch ChatBot  --  Streamlit UI
-===================================================
 Tab 1: Chat with Peter Lynch      (RAG-powered)
 Tab 2: Lynch Stock Analyzer       (single stock deep-dive + backtest)
 Tab 3: Financial Ratios Dashboard (fin_data_df, Dow Jones 30)
@@ -204,7 +203,7 @@ with st.sidebar:
     st.markdown("<h1 style='font-size:1.5rem;margin-bottom:0;color:#FFFFFF;'>Peter Lynch</h1>",
                 unsafe_allow_html=True)
     st.markdown("<p style='color:#A0A0A0;font-size:0.8rem;margin-top:4px;'>"
-                "Fidelity Magellan Fund · 1977-1990<br>29.2% avg. annual return</p>",
+                "Fidelity Magellan Fund </p>",
                 unsafe_allow_html=True)
     st.markdown("<div style='height:2px;background:#C8102E;margin:10px 0;'></div>",
                 unsafe_allow_html=True)
@@ -716,8 +715,33 @@ with tab_dashboard:
 
     def build_fin_display(tickers):
         rows = []
+        missing = [t for t in tickers if t not in FIN_DATA_STATIC]
+        live_data = {}
+        if missing:
+            try:
+                from yahooquery import Ticker
+                obj = Ticker(missing)
+                fin = obj.financial_data
+                summary = obj.summary_detail
+                for t in missing:
+                    d = {}
+                    if isinstance(fin.get(t), dict):
+                        d.update(fin[t])
+                    if isinstance(summary.get(t), dict):
+                        d.update(summary[t])
+                    if d:
+                        live_data[t] = d
+            except Exception:
+                pass
+
         for t in tickers:
-            d = FIN_DATA_STATIC.get(t, {})
+            if t in FIN_DATA_STATIC:
+                d = FIN_DATA_STATIC[t]
+            elif t in live_data:
+                d = live_data[t]
+            else:
+                d = {}
+
             eg  = d.get("earningsGrowth")
             rg  = d.get("revenueGrowth")
             roe = d.get("returnOnEquity")
