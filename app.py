@@ -14,6 +14,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 
 from lynch_rag import ask_lynch, load_pipeline
+import stock_cache
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config & global CSS
@@ -339,6 +340,7 @@ with tab_stocks:
 
 
     def fetch_fundamentals(ticker: str) -> dict:
+        # ── Attempt live Yahoo Finance data ──────────────────────────────────
         try:
             stk  = yf.Ticker(ticker)
             info = stk.info
@@ -363,7 +365,6 @@ with tab_stocks:
             else:
                 mc_str = "N/A"
 
-            # ── Extra Lynch metrics ───────────────────────────────────────────
             price      = info.get("currentPrice") or info.get("regularMarketPrice")
             shares     = info.get("sharesOutstanding")
             cash_total = info.get("totalCash")
@@ -378,7 +379,6 @@ with tab_stocks:
             if revenue_g is not None:
                 revenue_g *= 100
 
-            # Stock category heuristic (Lynch's 6 categories)
             def classify():
                 if eps_growth is None:
                     return "Unknown", "#8899aa"
@@ -391,6 +391,10 @@ with tab_stocks:
                 return "Moderate Grower", "#f0c040"
 
             category, cat_color = classify()
+
+            # Treat a nearly-empty info dict as a failure so we fall back to cache
+            if not price and pe is None and eps_growth is None:
+                raise ValueError("live API returned no usable data")
 
             return {
                 "name":          info.get("longName", ticker),
@@ -415,18 +419,30 @@ with tab_stocks:
                 "cat_color":     cat_color,
                 "description":   info.get("longBusinessSummary", ""),
             }
-        except Exception as exc:
-            return {"error": str(exc), "name": ticker}
+        except Exception:
+            pass
+
+        # ── Cache fallback: derive what we can from local OHLCV data ─────────
+        cached = stock_cache.compute_fundamentals(ticker)
+        if cached is not None:
+            return cached
+
+        return {"error": f"No data available for {ticker}. The live API is unreachable and this ticker is not in the local cache.", "name": ticker}
 
 
     def fetch_history(ticker: str, period: str = "5y") -> pd.DataFrame:
+        # ── Attempt live Yahoo Finance data ──────────────────────────────────
         try:
             df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-            return df
+            if not df.empty:
+                return df
         except Exception:
-            return pd.DataFrame()
+            pass
+
+        # ── Cache fallback ────────────────────────────────────────────────────
+        return stock_cache.load_history(ticker)
 
 
     def lynch_backtest(hist: pd.DataFrame, pe_buy: float = 15.0, pe_sell: float = 25.0) -> pd.DataFrame:
@@ -484,6 +500,13 @@ with tab_stocks:
             if "error" in fund:
                 st.error(f"**{ticker}**: {fund['error']}")
                 continue
+
+            if fund.get("from_cache"):
+                st.info(
+                    f"Live data unavailable for **{ticker}** (Yahoo Finance rate-limit). "
+                    "Showing price history from local cache — ratio metrics (PE, PEG, etc.) "
+                    "require a live connection and are shown as N/A."
+                )
 
             # ── Company header ────────────────────────────────────────────────
             st.markdown(
