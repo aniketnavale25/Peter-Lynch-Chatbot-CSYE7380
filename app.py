@@ -246,11 +246,11 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab_chat, tab_kmeans, tab_dashboard, tab_analyzer = st.tabs([
+tab_chat, tab_analyzer, tab_dashboard, tab_kmeans = st.tabs([
     "Chat with Peter Lynch",
-    "K-Means Stock Screener",
-    "Financial Dashboard",
     "Lynch Stock Analyzer",
+    "Financial Dashboard",
+    "K-Means Stock Screener",
 ])
 
 
@@ -892,9 +892,36 @@ with tab_kmeans:
         model = KMeans(n_clusters=4, random_state=100, n_init=10)
         model.fit(X_scaled)
         yhat = model.predict(X_scaled)
-        long_stocks  = list(numeric_data.index[yhat == 3])
-        short_stocks = list(numeric_data.index[yhat == 2])
-        return X_scaled, yhat, long_stocks, short_stocks, numeric_data
+        # Dynamic Long/Short: score each cluster by Lynch criteria
+        cluster_scores = {}
+        cluster_info_map = {}
+        for cid in range(4):
+            mask = yhat == cid
+            if mask.sum() == 0:
+                cluster_scores[cid] = -999
+                continue
+            cd = numeric_data[mask]
+            avg_roe  = cd["returnOnEquity"].mean() if "returnOnEquity" in cd.columns else 0
+            avg_eg   = cd["earningsGrowth"].mean()  if "earningsGrowth"  in cd.columns else 0
+            avg_debt = cd["debtToEquity"].mean()    if "debtToEquity"    in cd.columns else 0
+            avg_pm   = cd["profitMargins"].mean()   if "profitMargins"   in cd.columns else 0
+            # Lynch scoring: high ROE + high growth + high margins - high debt
+            score = (avg_roe * 2) + (avg_eg * 2) + avg_pm - (avg_debt / 500)
+            cluster_scores[cid] = score
+            cluster_info_map[cid] = {"avg_roe": avg_roe, "avg_eg": avg_eg,
+                                     "avg_debt": avg_debt, "avg_pm": avg_pm,
+                                     "n": int(mask.sum())}
+
+        long_cluster  = max(cluster_scores, key=cluster_scores.get)
+        short_cluster = min(cluster_scores, key=cluster_scores.get)
+
+        long_stocks  = list(numeric_data.index[yhat == long_cluster])
+        short_stocks = list(numeric_data.index[yhat == short_cluster])
+        return X_scaled, yhat, long_stocks, short_stocks, numeric_data, {
+            "long_cluster": long_cluster,
+            "short_cluster": short_cluster,
+            "cluster_info_map": cluster_info_map,
+        }
 
     if run_km:
         tickers_km = tuple(t.strip().upper() for t in ticker_input_km.split(",") if t.strip())
@@ -904,7 +931,7 @@ with tab_kmeans:
             with st.spinner(f"Fetching financial data for {len(tickers_km)} stocks via yahooquery..."):
                 fin_df = fetch_fin_data_yahooquery(tickers_km)
             with st.spinner("Running K-Means..."):
-                X_scaled, yhat, long_list, short_list, numeric_data = run_professor_kmeans(fin_df)
+                X_scaled, yhat, long_list, short_list, numeric_data, cluster_info = run_professor_kmeans(fin_df)
 
             if X_scaled is None:
                 st.error("Not enough valid data to run clustering.")
@@ -913,23 +940,44 @@ with tab_kmeans:
 
                 st.markdown("#### Value-Quality Cluster Chart")
 
-                C = {0:"#A0A0A0", 1:"#FFC107", 2:"#C8102E", 3:"#4CAF50"}
-                L = {0:"Neutral A", 1:"Neutral B", 2:"Short", 3:"Long"}
+                # Long=green, Short=red, both Neutral clusters=same grey
+                long_cluster  = cluster_info["long_cluster"]
+                short_cluster = cluster_info["short_cluster"]
+
+                def get_color(cid):
+                    if cid == long_cluster:  return "#4CAF50"
+                    if cid == short_cluster: return "#C8102E"
+                    return "#6B7B8D"   # same neutral colour for both remaining clusters
+
+                def get_label(cid):
+                    if cid == long_cluster:  return "Long"
+                    if cid == short_cluster: return "Short"
+                    return "Neutral"
+
                 fig = go.Figure()
                 tl = list(numeric_data.index)
+                # Group the two neutral clusters under one legend entry
+                neutral_added = False
                 for cid in range(4):
                     ix = [i for i, m in enumerate(yhat == cid) if m]
                     if not ix:
                         continue
+                    is_neutral = cid not in (long_cluster, short_cluster)
                     fig.add_trace(go.Scatter(
                         x=X_scaled[ix, 0], y=X_scaled[ix, 1],
-                        mode="markers+text", name=L[cid],
+                        mode="markers+text",
+                        name="Neutral" if is_neutral else get_label(cid),
+                        legendgroup="Neutral" if is_neutral else get_label(cid),
+                        showlegend=(not is_neutral) or (not neutral_added),
                         text=[tl[i] for i in ix],
                         textposition="top center",
                         textfont=dict(size=10, color="#E8E8E8"),
-                        marker=dict(size=14, color=C[cid], line=dict(color="#1A1A1A", width=1.5)),
-                        hovertemplate=f"<b>%{{text}}</b><br>Cluster: {L[cid]}<br>"
+                        marker=dict(size=14, color=get_color(cid),
+                                    line=dict(color="#1A1A1A", width=1.5)),
+                        hovertemplate=f"<b>%{{text}}</b><br>Group: {get_label(cid)}<br>"
                                       "Value: %{x:.3f}<br>Quality: %{y:.3f}<extra></extra>"))
+                    if is_neutral:
+                        neutral_added = True
                 fig.update_layout(
                     paper_bgcolor="#1A1A1A", plot_bgcolor="#2A2A2A",
                     font=dict(color="#E8E8E8", family="Lato"),
@@ -943,6 +991,10 @@ with tab_kmeans:
                 long_col, short_col = st.columns(2)
                 with long_col:
                     st.markdown("<h3 style='color:#4CAF50;'>Long Stocks</h3>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<p style='color:#A0A0A0;font-size:0.8rem;margin-top:-8px;'>"
+                        f"Cluster {long_cluster} — highest Lynch quality score</p>",
+                        unsafe_allow_html=True)
                     if long_list:
                         for t in long_list:
                             d = FIN_DATA_STATIC.get(t, {})
@@ -960,6 +1012,10 @@ with tab_kmeans:
 
                 with short_col:
                     st.markdown("<h3 style='color:#C8102E;'>Short Stocks</h3>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<p style='color:#A0A0A0;font-size:0.8rem;margin-top:-8px;'>"
+                        f"Cluster {short_cluster} — lowest Lynch quality score</p>",
+                        unsafe_allow_html=True)
                     if short_list:
                         for t in short_list:
                             d = FIN_DATA_STATIC.get(t, {})
