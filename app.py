@@ -766,7 +766,7 @@ with tab_dashboard:
                 "Price ($)":         d.get("currentPrice"),
                 "ROE (%)":           round(roe*100, 1) if roe is not None else None,
                 "ROA (%)":           round(roa*100, 1) if roa is not None else None,
-                "D/E":               d.get("debtToEquity"),
+                "D/E": d.get("debtToEquity") / 100 if d.get("debtToEquity") is not None else None,
                 "Current Ratio":     d.get("currentRatio"),
                 "Profit Margin (%)": round(d.get("profitMargins", 0)*100, 1) if d.get("profitMargins") is not None else None,
                 "EPS Growth (%)":    round(eg*100, 1) if eg is not None else None,
@@ -822,19 +822,6 @@ with tab_dashboard:
     )
 
     st.dataframe(styled_ov, width='stretch', height=530)
-
-    st.divider()
-    with st.expander("Lynch's PEG Ratio Guide"):
-        st.markdown("""
-**PEG Ratio** = P/E / Earnings Growth Rate
-
-| PEG Value | Lynch's Interpretation |
-|-----------|----------------------|
-| < 0.5     | Hidden gem -- potentially a ten-bagger |
-| 0.5 - 1.0 | Bargain -- good risk/reward |
-| 1.0 - 2.0 | Fairly priced |
-| > 2.0     | Expensive |
-        """)
 
 
 # =============================================================================
