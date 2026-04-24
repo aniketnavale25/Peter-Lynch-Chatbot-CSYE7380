@@ -886,9 +886,17 @@ with tab_kmeans:
         numeric_data = numeric_data.apply(pd.to_numeric, errors="coerce").fillna(0)
         if numeric_data.shape[0] < 4 or numeric_data.shape[1] == 0:
             return None, None, [], [], numeric_data
-        X = numeric_data.to_numpy()
+
+        #X = numeric_data.to_numpy()
+        #scaler = MinMaxScaler()
+        #X_scaled = scaler.fit_transform(X)
+    
+        selected_cols = ["returnOnEquity", "earningsGrowth"]
+        selected_cols = [c for c in selected_cols if c in numeric_data.columns]
+        X = numeric_data[selected_cols].to_numpy()
         scaler = MinMaxScaler()
         X_scaled = scaler.fit_transform(X)
+
         model = KMeans(n_clusters=4, random_state=100, n_init=10)
         model.fit(X_scaled)
         yhat = model.predict(X_scaled)
@@ -933,12 +941,14 @@ with tab_kmeans:
             with st.spinner("Running K-Means..."):
                 X_scaled, yhat, long_list, short_list, numeric_data, cluster_info = run_professor_kmeans(fin_df)
 
+            #st.write("Features used:", list(numeric_data.columns))
+
             if X_scaled is None:
                 st.error("Not enough valid data to run clustering.")
             else:
                 st.success(f"K-Means complete -- {len(tickers_km)} stocks in 4 clusters")
 
-                st.markdown("#### Value-Quality Cluster Chart")
+                st.markdown("#### ROE vs. Earnings Growth Cluster Chart")
 
                 # Long=green, Short=red, both Neutral clusters=same grey
                 long_cluster  = cluster_info["long_cluster"]
@@ -975,15 +985,15 @@ with tab_kmeans:
                         marker=dict(size=14, color=get_color(cid),
                                     line=dict(color="#1A1A1A", width=1.5)),
                         hovertemplate=f"<b>%{{text}}</b><br>Group: {get_label(cid)}<br>"
-                                      "Value: %{x:.3f}<br>Quality: %{y:.3f}<extra></extra>"))
+                                      "Scaled ROE: %{x:.3f}<br>Scaled Earnings Growth: %{y:.3f}<extra></extra>"))
                     if is_neutral:
                         neutral_added = True
                 fig.update_layout(
                     paper_bgcolor="#1A1A1A", plot_bgcolor="#2A2A2A",
                     font=dict(color="#E8E8E8", family="Lato"),
                     legend=dict(bgcolor="#2A2A2A", bordercolor="#3D3D3D", font=dict(size=12)),
-                    xaxis=dict(title="Value", gridcolor="#3D3D3D", zeroline=False),
-                    yaxis=dict(title="Quality", gridcolor="#3D3D3D", zeroline=False),
+                    xaxis=dict(title="ROE (scaled 0–1)", gridcolor="#3D3D3D", zeroline=False),
+                    yaxis=dict(title="Earnings Growth (scaled 0–1)", gridcolor="#3D3D3D", zeroline=False),
                     margin=dict(l=10, r=10, t=20, b=10), height=480)
                 st.plotly_chart(fig, width='stretch')
 
