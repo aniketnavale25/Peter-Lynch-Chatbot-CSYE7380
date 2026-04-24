@@ -689,8 +689,8 @@ with tab_dashboard:
     st.markdown(
         "<h2 style='margin-bottom:0.2rem;'>Financial Ratios Dashboard</h2>"
         "<p style='color:#A0A0A0;font-size:0.9rem;'>"
-        "Key financial ratios for all selected stocks (fin_data_df). "
-        "Default portfolio: Dow Jones 30.</p>",
+        "Key financial ratios for all selected stocks. "
+        "</p>",
         unsafe_allow_html=True)
     st.divider()
 
@@ -803,13 +803,7 @@ with tab_dashboard:
             {"selector":"td","props":[("text-align","center"),("padding","6px 10px")]},
         ])
     )
-    st.markdown(
-        f"<p style='color:#A0A0A0;font-size:0.8rem;'>"
-        f"Portfolio: {len(st.session_state.overview_tickers)} stocks &nbsp;|&nbsp; "
-        f"<span style='color:#4CAF50;'>Green</span> = above threshold &nbsp; "
-        f"<span style='color:#C8102E;'>Red</span> = below threshold &nbsp; "
-        f"<span style='color:#FFC107;'>Yellow</span> = moderate</p>",
-        unsafe_allow_html=True)
+    
     st.dataframe(styled_ov, width='stretch', height=530)
 
     st.divider()
@@ -837,8 +831,7 @@ with tab_kmeans:
     st.markdown(
         "<h2 style='margin-bottom:0.2rem;'>K-Means Stock Screener</h2>"
         "<p style='color:#A0A0A0;font-size:0.9rem;'>"
-        "Replicates professor's K-Means algorithm exactly using yahooquery. "
-        "Cluster 3 = Long, Cluster 2 = Short. Default: Dow Jones 30.</p>",
+        "Try to seperate the stocks into 4 clusters.</p>",
         unsafe_allow_html=True)
     st.divider()
 
@@ -851,7 +844,7 @@ with tab_kmeans:
     col_l, col_r = st.columns([4, 1])
     with col_l:
         ticker_input_km = st.text_input(
-            "Stock universe (comma-separated -- Dow Jones 30 by default)",
+            "Stock universe (comma-separated)",
             value=", ".join(DOW30), key="km_tickers")
     with col_r:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -918,22 +911,6 @@ with tab_kmeans:
             else:
                 st.success(f"K-Means complete -- {len(tickers_km)} stocks in 4 clusters")
 
-                with st.expander("Methodology (follows professor's notebook exactly)"):
-                    st.markdown("""
-**Library:** `yahooquery` -- same as professor's `from yahooquery import Ticker`
-
-**Steps (professor's exact code):**
-1. `ticker = Ticker(stock_symbol_list)`
-2. `fin_data_df = pd.DataFrame.from_dict(ticker.financial_data, orient='index').T`
-3. `data = fin_data_df.T.fillna(0)`
-4. Drop non-numeric columns, convert to numpy
-5. `scaler = MinMaxScaler()` -- scale to [0,1]
-6. `model = KMeans(n_clusters=4, random_state=100)`
-7. `Long Stocks  = data.index[yhat == 3]`
-8. `Short Stocks = data.index[yhat == 2]`
-                    """)
-
-                st.divider()
                 st.markdown("#### Value-Quality Cluster Chart")
 
                 C = {0:"#A0A0A0", 1:"#FFC107", 2:"#C8102E", 3:"#4CAF50"}
@@ -998,30 +975,7 @@ with tab_kmeans:
                     else:
                         st.info("No Short stocks in this run.")
 
-                st.divider()
-                st.markdown("#### Full Financial Data (fin_data_df)")
-                disp_cols = ["earningsGrowth","revenueGrowth","returnOnEquity",
-                             "returnOnAssets","grossMargins","operatingMargins",
-                             "profitMargins","debtToEquity","currentRatio"]
-                show_df = numeric_data[[c for c in disp_cols if c in numeric_data.columns]].copy()
-
-                def hl(row):
-                    if row.name in long_list:
-                        return ["background-color:#1A2A1A;color:#4CAF50"] * len(row)
-                    if row.name in short_list:
-                        return ["background-color:#2A1A1A;color:#C8102E"] * len(row)
-                    return ["background-color:#2A2A2A;color:#E8E8E8"] * len(row)
-
-                st.dataframe(
-                    show_df.style.apply(hl, axis=1).format("{:.4f}", na_rep="--")
-                    .set_table_styles([
-                        {"selector":"th","props":[("background-color","#000000"),
-                                                  ("color","#C8102E"),("font-size","0.74rem"),
-                                                  ("text-align","center"),("padding","6px")]},
-                        {"selector":"td","props":[("font-size","0.82rem"),
-                                                  ("text-align","center"),("padding","5px 8px")]},
-                    ]),
-                    width='stretch', height=420)
+                
     else:
         st.markdown(
             "<div style='text-align:center;padding:4rem 0;color:#555555;font-style:italic;'>"
