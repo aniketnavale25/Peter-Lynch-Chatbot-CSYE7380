@@ -900,9 +900,17 @@ with tab_kmeans:
             pd.to_numeric, errors="coerce").fillna(0)
         if numeric_data.shape[0] < 4 or numeric_data.shape[1] == 0:
             return None, None, [], [], numeric_data
-        X = numeric_data.to_numpy()
+
+        # X = numeric_data.to_numpy()
+        # scaler = MinMaxScaler()
+        # X_scaled = scaler.fit_transform(X)
+
+        selected_cols = ["returnOnEquity", "earningsGrowth"]
+        selected_cols = [c for c in selected_cols if c in numeric_data.columns]
+        X = numeric_data[selected_cols].to_numpy()
         scaler = MinMaxScaler()
         X_scaled = scaler.fit_transform(X)
+
         model = KMeans(n_clusters=4, random_state=100, n_init=10)
         model.fit(X_scaled)
         yhat = model.predict(X_scaled)
@@ -951,6 +959,8 @@ with tab_kmeans:
             with st.spinner("Running K-Means..."):
                 X_scaled, yhat, long_list, short_list, numeric_data, cluster_info = run_professor_kmeans(
                     fin_df)
+
+            # st.write("Features used:", list(numeric_data.columns))
 
             if X_scaled is None:
                 st.error("Not enough valid data to run clustering.")
