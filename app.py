@@ -246,11 +246,11 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab_chat, tab_analyzer, tab_dashboard, tab_kmeans = st.tabs([
+tab_chat, tab_kmeans, tab_dashboard, tab_analyzer = st.tabs([
     "Chat with Peter Lynch",
-    "Lynch Stock Analyzer",
-    "Financial Dashboard",
     "K-Means Stock Screener",
+    "Financial Dashboard",
+    "Lynch Stock Analyzer",
 ])
 
 

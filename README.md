@@ -81,6 +81,19 @@ Peter-Lynch-Chatbot-CSYE7380/
 ---
 
 ## Setup & Installation
+#Windows
+
+python -m venv venv
+
+venv\Scripts\activate 
+
+pip install -r requirements.txt
+
+pip install yahooquery scikit-learn>=1.3.0
+
+Create a `.env` file in the project root, add OPENAI_API_KEY
+
+python -m streamlit run app.py
 
 ### Prerequisites
 - Python 3.12
